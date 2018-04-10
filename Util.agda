@@ -56,6 +56,13 @@ natsToList : Nat → List Nat
 natsToList zero = []
 natsToList (suc m) = m ∷ natsToList m
 
+-- Nat laws
+
+suc-inj : ∀ {a} {b} → suc a ≡ suc b → a ≡ b
+suc-inj refl = refl
+
+-- +N laws
+
 +N-assoc : ∀ {a b c} → a +N (b +N c) ≡ a +N b +N c
 +N-assoc {zero} {b} {c} = refl
 +N-assoc {suc a} {b} {c} rewrite +N-assoc {a} {b} {c} = refl
@@ -67,6 +74,24 @@ natsToList (suc m) = m ∷ natsToList m
 +N-rsuc : ∀ {a b} → a +N suc b ≡ suc (a +N b)
 +N-rsuc {zero} {b} = refl
 +N-rsuc {suc a} {b} = cong suc (+N-rsuc {a} {b})
+
++N-unit-lbound : ∀ {a b} → a +N b ≡ 0 → a ≡ 0
++N-unit-lbound {zero} {b} p = refl
++N-unit-lbound {suc a} {b} ()
+
++N-unit-rbound : ∀ {a b} → a +N b ≡ 0 → b ≡ 0
++N-unit-rbound {a} {zero} p = refl
++N-unit-rbound {a} {suc b} p with a +N suc b | +N-rsuc {a} {b}
++N-unit-rbound {a} {suc b} () | .(suc (a +N b)) | refl
+
++N-runit-uniq : ∀ {a b} → a +N b ≡ a → b ≡ 0
++N-runit-uniq {zero} {.0} refl = refl
++N-runit-uniq {suc a} {b} p rewrite +N-rsuc {a} {b} = +N-runit-uniq {a} {b} (suc-inj p)
+
++N-lunit-uniq : ∀ {a b} → a +N b ≡ b → a ≡ 0
++N-lunit-uniq {zero} {b} refl = refl
++N-lunit-uniq {suc a} {zero} ()
++N-lunit-uniq {suc a} {suc b} p rewrite +N-rsuc {a} {b} = +N-lunit-uniq (suc-inj p)
 
 +N-comm : ∀ {a b} → a +N b ≡ b +N a
 +N-comm {zero} {zero} = refl
@@ -80,9 +105,24 @@ natsToList (suc m) = m ∷ natsToList m
                                 | +N-comm {b} {c}
                                 = refl
 
+-- *N laws
+
 *N-rabsorb : ∀ {a} → a *N 0 ≡ 0
 *N-rabsorb {zero} = refl
 *N-rabsorb {suc a} = *N-rabsorb {a}
+
+*N-rabsorb-uniq : ∀ {a b} → ¬ (a ≡ 0) → a *N b ≡ 0 → b ≡ 0
+*N-rabsorb-uniq {zero} {b} p refl with p refl
+*N-rabsorb-uniq {zero} {b} p refl | ()
+*N-rabsorb-uniq {suc a} {zero} p q = refl
+*N-rabsorb-uniq {suc a} {suc b} p ()
+
+*N-labsorb-uniq : ∀ {a b} → ¬ (b ≡ 0) → a *N b ≡ 0 → a ≡ 0
+*N-labsorb-uniq {zero} {b} p refl = refl
+*N-labsorb-uniq {suc a} {zero} p q with a *N zero | *N-rabsorb {a}
+*N-labsorb-uniq {suc a} {zero} p q | _ | refl with (p q)
+*N-labsorb-uniq {suc a} {zero} p q | _ | refl | ()
+*N-labsorb-uniq {suc a} {suc b} p ()
 
 *N-runit : ∀ {a} → a *N 1 ≡ a
 *N-runit {zero} = refl
@@ -99,6 +139,18 @@ natsToList (suc m) = m ∷ natsToList m
                               | +N-assoc {a} {b} {a +N a *N b}
                               | +N-assoc {a +N b} {a} {a *N b}
                               = refl
+
+*N-runit-uniq : ∀ {a b} → ¬ (a ≡ 0) → a *N b ≡ a → b ≡ 1
+*N-runit-uniq {zero} {b} p refl with p refl
+*N-runit-uniq {zero} {b} p refl | ()
+*N-runit-uniq {suc a} {zero} p q with a *N 0 | *N-rabsorb {a}
+*N-runit-uniq {suc a} {zero} p () | .0 | refl
+*N-runit-uniq {suc a} {suc b} p q rewrite *N-rsuc {a} {b}
+                                        | +N-assoc {b} {a} {a *N b}
+                                        | +N-comm {b} {a}
+                                        | sym (+N-assoc {a} {b} {a *N b})
+                                        | +N-unit-lbound {b} (+N-runit-uniq (suc-inj q))
+                                        = refl
 
 *+N-distribl : ∀ {a b c} → a *N (b +N c) ≡ (a *N b) +N (a *N c)
 *+N-distribl {zero} {b} {c} = refl
@@ -127,6 +179,15 @@ not true = false
 So : Bool → Set
 So false = Zero
 So true = One
+
+so-law-tt : ∀ {b} → (So b) → b ≡ true
+so-law-tt {false} ()
+so-law-tt {true} <> = refl
+
+so-law-ff : ∀ {b} → (So (not b)) → b ≡ false
+so-law-ff {false} <> = refl
+so-law-ff {true} ()
+
 
 _<_ : Nat → Nat → Set
 m < zero = Zero

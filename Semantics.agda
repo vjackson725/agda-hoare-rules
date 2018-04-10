@@ -112,7 +112,6 @@ module Hoare where
   WHILE {b = b} step PQ Pσ (while-loopSOS {σ = σ} refl c wc) | true | f = let Pσ'' = f (Pσ , <>) c
                                                                            in WHILE step PQ Pσ'' wc
 
-
 module Hoare2 where
   -- Partial Execution Hoare Rules
   -- no ⦃ ⦄ brackets because they're reserved :(
@@ -125,9 +124,15 @@ module Hoare2 where
     COND : ∀ {P Q} {b : BExp}{c₁ c₂ : Com} →
            P⟪ P ∧ (λ σ → So (b σ)) ⟫ c₁ ⟪ Q ⟫ → P⟪ P ∧ (λ σ → So (not (b σ))) ⟫ c₂ ⟪ Q ⟫ →
            P⟪ P ⟫ [IF b THEN c₁ ELSE c₂ FI] ⟪ Q ⟫
-    WHILE : ∀ {P Q}{b : BExp}{c : Com} →
-           P⟪ P ∧ (λ σ → So (b σ)) ⟫ c ⟪ P ⟫ → ((σ : State) → (P σ × So (not (b σ))) → Q σ) →
+    WHILE : {P Q : State → Set l} {b : BExp}{c : Com} →
+           P⟪ (λ σ → P σ × So (b σ)) ⟫ c ⟪ P ⟫ →
+           (INV : (σ : State) → So (not (b σ)) → P σ → Q σ) →
            P⟪ P ⟫ [WHILE b DO c OD] ⟪ Q ⟫
+    WEAKEN : ∀ {P P' Q Q' : State → Set l} {e : AExp} {c : Com} →
+           (∀ σ → P σ → P' σ) →
+           P⟪ P' ⟫ c ⟪ Q' ⟫ →
+           (∀ σ → Q' σ → Q σ) →
+           P⟪ P ⟫ c ⟪ Q ⟫ 
 
 open Hoare2
 
@@ -141,13 +146,18 @@ fact : Nat → Nat
 fact zero = 1
 fact (suc n) = (suc n) *N fact n
 
-fact-law1 : ∀ {n} → So (0 <N n) → n *N (fact (n -N 1)) ≡ fact n
-fact-law1 {zero} ()
-fact-law1 {suc n} <> = refl
+factorial-law1 : ∀ {n} → So (0 <N n) → n *N (fact (n -N 1)) ≡ fact n
+factorial-law1 {zero} ()
+factorial-law1 {suc n} <> = refl
 
 runit-mult : {n : Nat} → n *N 1 ≡ n
 runit-mult {zero} = refl
 runit-mult {suc n} rewrite runit-mult {n} = refl
+
+nat-law1 : ∀ {n} → (1 <N n) ≡ false → (n ≡ 0) + (n ≡ 1)
+nat-law1 {zero} refl = inl refl
+nat-law1 {suc zero} p = inr refl
+nat-law1 {suc (suc n)} ()
 
 -- imperatively defined factorial
 
@@ -162,24 +172,46 @@ fact-imp =
 
 -- Hoare proofs
 
--- Agda is not smart enough to do the reduction through the assignments, so we have to do it manually...
-inv-proof : (x : State) (a b : VName) (n : Nat) → (Eq._==_ NatEq a b ≡ false) →
-     So (1 <N x a) →
-     (((x [ b ↦ x b *N x a ]) [ a ↦ (x [ b ↦ x b *N x a ]) a -N 1 ]) b  *N  fact (((x [ b ↦ x b *N x a ]) [ a ↦ (x [ b ↦ x b *N x a ]) a -N 1 ]) a) ≡ fact n)
-     ≡
-     (x b *N fact (x a) ≡ fact n)
-inv-proof x a b n abf 1<xa with Eq.law-sym NatEq {a} {b} | Eq.law-refl NatEq {a} | Eq.law-refl NatEq {b}
-... | abba | aat | bbt rewrite abba | abf | aat | bbt
-                             | sym (*N-assoc {x b} {x a} {fact (x a -N 1)})
-                             | fact-law1 {x a} (<N-trans {0} {1} {x a} <> 1<xa)
-                             = refl
+module _ (a b : VName) (abf : (Eq._==_ NatEq a b ≡ false)) where
 
-{-
--- TODO: need some way to integrate inv-proof into the type so that it goes through
-fact-fact : (a b : VName) → (Eq._==_ NatEq b a ≡ false) → (n : Nat) → P⟪ (λ σ → σ a ≡ n ) ⟫ fact-imp a b ⟪ (λ σ → (σ a ≡ 1) × (σ b ≡ fact n)) ⟫
-fact-fact a b p n = SEMI ASSIGN (WHILE (SEMI ASSIGN ASSIGN) (inv-help a b p n))
-  where
-    inv-help : (a b : VName) → (Eq._==_ NatEq b a ≡ false) →
-               (n : Nat) (σ : State) → (σ b *N fact (σ a) ≡ fact n) × (So (not (1 <N σ a))) → (σ a ≡ 1) × (σ b ≡ fact n)
-    inv-help a b p n σ = {!!}
--}
+  fact-fact : (n : Nat) → P⟪ (λ σ → σ a ≡ n) ⟫ fact-imp a b ⟪ (λ σ → σ b ≡ fact n) ⟫
+  fact-fact n = WEAKEN
+                  weakP
+                  (SEMI
+                    {Q = (λ z → z b *N fact (z a) ≡ fact n)}
+                    ASSIGN
+                    (WHILE
+                      (WEAKEN
+                        weak-loopP
+                        (SEMI ASSIGN ASSIGN)
+                        (λ σ → id))
+                      loop-inv))
+                  weakQ
+    where
+      weakP : {n : Nat} (σ : State) → σ a ≡ n → ((σ [ b ↦ 1 ]) b) *N fact ((σ [ b ↦ 1 ]) a) ≡ fact n
+      weakP σ p with Eq.law-refl NatEq {b}
+      weakP σ p | bb rewrite abf | bb | +N-runit {fact (σ a)} | p = refl
+      
+      weakQ : {n : Nat} (σ : State) → (σ a ≡ 1) × (σ b *N fact (σ a) ≡ fact n) → σ b ≡ fact n
+      weakQ σ (p , q) rewrite p | *N-runit {σ b} = q
+
+      weak-loopP : {n : Nat} (σ : State) →
+               (σ b *N fact (σ a) ≡ fact n) × So (1 <N σ a) →
+               ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b
+                 *N
+               fact (((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) a)
+               ≡ fact n
+      weak-loopP σ (p , q) rewrite Eq.law-refl NatEq {a}
+                                 | Eq.law-sym NatEq {b} {a}
+                                 | abf
+                                 | Eq.law-refl NatEq {b}
+                                 | sym (*N-assoc {σ b} {σ a} {fact (σ a -N 1)})
+                                 | factorial-law1 {σ a} (<N-trans {0} {1} {σ a} <> q)
+                                 = p
+
+      loop-inv : {n : Nat} (σ : State) →
+             So (not (1 <N σ a)) →
+             σ b *N fact (σ a) ≡ fact (n) →
+             (σ a ≡ 1) × (σ b *N fact (σ a) ≡ fact n)
+      loop-inv σ p q with nat-law1 {σ a} (so-law-ff p)
+      ... | s = {!!} , q
