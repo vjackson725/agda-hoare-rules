@@ -146,18 +146,15 @@ fact : Nat → Nat
 fact zero = 1
 fact (suc n) = (suc n) *N fact n
 
-factorial-law1 : ∀ {n} → So (0 <N n) → n *N (fact (n -N 1)) ≡ fact n
-factorial-law1 {zero} ()
-factorial-law1 {suc n} <> = refl
+factorial-law : ∀ {n} → ¬ (0 ≡ n) → n *N (fact (n -N 1)) ≡ fact n
+factorial-law {zero} p with p refl
+factorial-law {zero} p | ()
+factorial-law {suc n} p = refl
 
-runit-mult : {n : Nat} → n *N 1 ≡ n
-runit-mult {zero} = refl
-runit-mult {suc n} rewrite runit-mult {n} = refl
-
-nat-law1 : ∀ {n} → (1 <N n) ≡ false → (n ≡ 0) + (n ≡ 1)
-nat-law1 {zero} refl = inl refl
-nat-law1 {suc zero} p = inr refl
-nat-law1 {suc (suc n)} ()
+nat-<1-01 : ∀ {n} → (1 <N n) ≡ false → (n ≡ 0) + (n ≡ 1)
+nat-<1-01 {zero} refl = inl refl
+nat-<1-01 {suc zero} p = inr refl
+nat-<1-01 {suc (suc n)} ()
 
 -- imperatively defined factorial
 
@@ -165,7 +162,7 @@ fact-imp : Nat → Nat → Com
 fact-imp =
     λ A B → (
     B := (λ σ → 1) >>
-    [WHILE (λ σ → 1 <N (σ A)) DO
+    [WHILE (λ σ → (1 <N (σ A))) DO
       B := (λ σ → (σ B) *N (σ A)) >>
       A := (λ σ → (σ A) -N 1)
     OD])
@@ -184,7 +181,7 @@ module _ (a b : VName) (abf : (Eq._==_ NatEq a b ≡ false)) where
                       (WEAKEN
                         weak-loopP
                         (SEMI ASSIGN ASSIGN)
-                        (λ σ → id))
+                        λ σ → id)
                       loop-inv))
                   weakQ
     where
@@ -192,8 +189,10 @@ module _ (a b : VName) (abf : (Eq._==_ NatEq a b ≡ false)) where
       weakP σ p with Eq.law-refl NatEq {b}
       weakP σ p | bb rewrite abf | bb | +N-runit {fact (σ a)} | p = refl
       
-      weakQ : {n : Nat} (σ : State) → (σ a ≡ 1) × (σ b *N fact (σ a) ≡ fact n) → σ b ≡ fact n
-      weakQ σ (p , q) rewrite p | *N-runit {σ b} = q
+      weakQ : {n : Nat} (σ : State) → (So (not (1 <N σ a))) × (σ b *N fact (σ a) ≡ fact n) → σ b ≡ fact n
+      weakQ σ (p , q) with nat-<1-01 {σ a} (so-law-ff p)
+      weakQ σ (p , q) | inl x rewrite x | *N-runit {σ b} = q
+      weakQ σ (p , q) | inr x rewrite x | *N-runit {σ b} = q
 
       weak-loopP : {n : Nat} (σ : State) →
                (σ b *N fact (σ a) ≡ fact n) × So (1 <N σ a) →
@@ -206,12 +205,11 @@ module _ (a b : VName) (abf : (Eq._==_ NatEq a b ≡ false)) where
                                  | abf
                                  | Eq.law-refl NatEq {b}
                                  | sym (*N-assoc {σ b} {σ a} {fact (σ a -N 1)})
-                                 | factorial-law1 {σ a} (<N-trans {0} {1} {σ a} <> q)
+                                 | factorial-law {σ a} (<N-neq-bound (<N-trans {0} {1} {σ a} <> q))
                                  = p
 
       loop-inv : {n : Nat} (σ : State) →
              So (not (1 <N σ a)) →
              σ b *N fact (σ a) ≡ fact (n) →
-             (σ a ≡ 1) × (σ b *N fact (σ a) ≡ fact n)
-      loop-inv σ p q with nat-law1 {σ a} (so-law-ff p)
-      ... | s = {!!} , q
+             (So (not (1 <N σ a))) × (σ b *N fact (σ a) ≡ fact n)
+      loop-inv σ p q = p , q

@@ -56,10 +56,54 @@ natsToList : Nat → List Nat
 natsToList zero = []
 natsToList (suc m) = m ∷ natsToList m
 
+
+
+not : Bool → Bool
+not false = true
+not true = false
+
+bool-lem : ∀ {b} → not (not b) ≡ b
+bool-lem {false} = refl
+bool-lem {true} = refl
+
+So : Bool → Set
+So false = Zero
+So true = One
+
+so-law-tt : ∀ {b} → (So b) → b ≡ true
+so-law-tt {false} ()
+so-law-tt {true} <> = refl
+
+so-law-ff : ∀ {b} → (So (not b)) → b ≡ false
+so-law-ff {false} <> = refl
+so-law-ff {true} ()
+
+so-not-neg-so : ∀ {b} → (So (not b)) → ¬ (So b)
+so-not-neg-so {false} <> = id
+so-not-neg-so {true} ()
+
+
 -- Nat laws
 
 suc-inj : ∀ {a} {b} → suc a ≡ suc b → a ≡ b
 suc-inj refl = refl
+
+==N-refl : ∀ {a} → (a ==N a) ≡ true
+==N-refl {zero} = refl
+==N-refl {suc a} = ==N-refl {a}
+
+==N-eq : ∀ {a b} → So (a ==N b) → a ≡ b
+==N-eq {zero} {zero} <> = refl
+==N-eq {zero} {suc b} ()
+==N-eq {suc a} {zero} ()
+==N-eq {suc a} {suc b} p = cong suc (==N-eq p)
+
+==N-ff-neq : ∀ {a b} → So (not (a ==N b)) → ¬ (a ≡ b)
+==N-ff-neq {zero} {zero} ()
+==N-ff-neq {zero} {suc b} <> ()
+==N-ff-neq {suc a} {zero} <> ()
+==N-ff-neq {suc a} {suc .a} p refl with a ==N a | ==N-refl {a}
+==N-ff-neq {suc a} {suc .a} () refl | .true | refl
 
 -- +N laws
 
@@ -172,22 +216,7 @@ suc-inj refl = refl
                                | *N-assoc {a} {b} {c}
                                = refl
 
-not : Bool → Bool
-not false = true
-not true = false
-
-So : Bool → Set
-So false = Zero
-So true = One
-
-so-law-tt : ∀ {b} → (So b) → b ≡ true
-so-law-tt {false} ()
-so-law-tt {true} <> = refl
-
-so-law-ff : ∀ {b} → (So (not b)) → b ≡ false
-so-law-ff {false} <> = refl
-so-law-ff {true} ()
-
+-- Set valued nat comparison
 
 _<_ : Nat → Nat → Set
 m < zero = Zero
@@ -215,3 +244,9 @@ suc m < suc n = m < n
 <N-trans {a} {zero} {suc c} () <>
 <N-trans {zero} {suc b} {suc c} <> q = <>
 <N-trans {suc a} {suc b} {suc c} p q = <N-trans {a} {b} {c} p q
+
+<N-neq-bound : ∀ {a b} → So (a <N b) → ¬ (a ≡ b)
+<N-neq-bound {zero} {zero} () refl
+<N-neq-bound {zero} {suc b} <> ()
+<N-neq-bound {suc a} {zero} () ()
+<N-neq-bound {suc a} {suc b} p q = <N-neq-bound p (suc-inj q)
