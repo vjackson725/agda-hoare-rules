@@ -64,6 +64,110 @@ module Eval where
   CoList.force (eval σ (c'@(while b c) ∷ cs)) | false = inr ((σ , c') , eval σ cs)
   CoList.force (eval σ (c'@(while b c) ∷ cs)) | true  = inr ((σ , c') , eval σ (c ∷ [WHILE b DO c OD] ∷ cs))
 
+module HoareLogic where
+  -- Partial Execution Hoare Rules
+  -- no ⦃ ⦄ brackets because they're reserved :(
+  data P⟪_⟫_⟪_⟫ {l} : (State → Set l) → Com → (State → Set l) → Set (lsuc l) where
+    SKIP : ∀ {P} → P⟪ P ⟫ skip ⟪ P ⟫
+    ASSIGN : ∀ {P} {v : VName} {e : AExp} → P⟪ (λ σ → P (σ [ v ↦ e σ ])) ⟫ v := e ⟪ P ⟫
+    SEMI : ∀ {P Q R} {c₁ c₂ : Com} →
+           P⟪ P ⟫ c₁ ⟪ Q ⟫ → P⟪ Q ⟫ c₂ ⟪ R ⟫ →
+           P⟪ P ⟫ c₁ >> c₂ ⟪ R ⟫
+    COND : ∀ {P Q} {b : BExp} {c₁ c₂ : Com} →
+           P⟪ (λ σ → P σ × So (b σ)) ⟫ c₁ ⟪ Q ⟫ → P⟪ (λ σ → P σ × So (not (b σ))) ⟫ c₂ ⟪ Q ⟫ →
+           P⟪ P ⟫ [IF b THEN c₁ ELSE c₂ FI] ⟪ Q ⟫
+    WHILE : {P Q : State → Set l} {b : BExp}{c : Com} →
+           P⟪ (λ σ → P σ × So (b σ)) ⟫ c ⟪ P ⟫ →
+           (INV : (σ : State) → So (not (b σ)) → P σ → Q σ) →
+           P⟪ P ⟫ [WHILE b DO c OD] ⟪ Q ⟫
+    WEAKEN : ∀ {P P' Q Q' : State → Set l} {c : Com} →
+           (∀ σ → P σ → P' σ) →
+           P⟪ P' ⟫ c ⟪ Q' ⟫ →
+           (∀ σ → Q' σ → Q σ) →
+           P⟪ P ⟫ c ⟪ Q ⟫ 
+
+-- Let's do a proof
+
+open import Agda.Builtin.Nat renaming (_+_ to _+N_; _-_ to _-N_;  _*_ to _*N_; _<_ to _<N_; _==_ to _==N_)
+
+-- functionally defined factorial, and some laws
+
+fact : Nat → Nat
+fact zero = 1
+fact (suc n) = (suc n) *N fact n
+
+factorial-law : ∀ {n} → ¬ (0 ≡ n) → n *N (fact (n -N 1)) ≡ fact n
+factorial-law {zero} p with p refl
+factorial-law {zero} p | ()
+factorial-law {suc n} p = refl
+
+nat-<1-01 : ∀ {n} → (1 <N n) ≡ false → (n ≡ 0) + (n ≡ 1)
+nat-<1-01 {zero} refl = inl refl
+nat-<1-01 {suc zero} p = inr refl
+nat-<1-01 {suc (suc n)} ()
+
+-- imperatively defined factorial
+
+fact-imp : Nat → Nat → Com
+fact-imp =
+    λ A B → (
+    B := (λ σ → 1) >>
+    [WHILE (λ σ → (1 <N (σ A))) DO
+      B := (λ σ → (σ B) *N (σ A)) >>
+      A := (λ σ → (σ A) -N 1)
+    OD])
+
+-- Hoare proofs
+
+module _ (a b : VName) (abf : (Eq._==_ NatEq a b ≡ false)) where
+  open HoareLogic
+
+  fact-fact : (n : Nat) → P⟪ (λ σ → σ a ≡ n) ⟫ fact-imp a b ⟪ (λ σ → σ b ≡ fact n) ⟫
+  fact-fact n = WEAKEN
+                  (weakP n)
+                  (SEMI
+                    ASSIGN
+                    (WHILE
+                      (WEAKEN
+                        (weak-loopP n)
+                        (SEMI ASSIGN ASSIGN)
+                        λ σ → id)
+                      (loop-inv n)))
+                  (weakQ n)
+    where
+      weakP : (n : Nat) (σ : State) → σ a ≡ n → ((σ [ b ↦ 1 ]) b) *N fact ((σ [ b ↦ 1 ]) a) ≡ fact n
+      weakP n σ p with Eq.law-refl NatEq {b}
+      weakP n σ p | bb rewrite abf | bb | +N-runit {fact (σ a)} | p = refl
+      
+      weakQ : (n : Nat) (σ : State) → (So (not (1 <N σ a))) × (σ b *N fact (σ a) ≡ fact n) → σ b ≡ fact n
+      weakQ n σ (p , q) with nat-<1-01 {σ a} (so-law-ff p)
+      weakQ n σ (p , q) | inl x rewrite x | *N-runit {σ b} = q
+      weakQ n σ (p , q) | inr x rewrite x | *N-runit {σ b} = q
+
+      weak-loopP : (n : Nat) (σ : State) →
+               (σ b *N fact (σ a) ≡ fact n) × So (1 <N σ a) →
+               ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b
+                 *N
+               fact (((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) a)
+               ≡ fact n
+      weak-loopP n σ (p , q) rewrite Eq.law-refl NatEq {a}
+                                 | Eq.law-sym NatEq {b} {a}
+                                 | abf
+                                 | Eq.law-refl NatEq {b}
+                                 | sym (*N-assoc {σ b} {σ a} {fact (σ a -N 1)})
+                                 | factorial-law {σ a} (<N-neq-bound (<N-trans {0} {1} {σ a} <> q))
+                                 = p
+
+      loop-inv : (n : Nat) (σ : State) →
+             So (not (1 <N σ a)) →
+             σ b *N fact (σ a) ≡ fact (n) →
+             (So (not (1 <N σ a))) × (σ b *N fact (σ a) ≡ fact n)
+      loop-inv n σ p q = p , q
+
+
+
+
+
 -- If we restrict the types to Zero and One, ∧ behaves like conjunction
 -- Slightly more general, we only need state indexes
 _∧_ : ∀ {lᵢ a b}{I : Set lᵢ} → (I → Set a) → (I → Set b) → (I → Set (a ⊔ b))
@@ -111,105 +215,3 @@ module Hoare where
   WHILE {b = b} step PQ Pσ (while-loopSOS {σ = σ} () c wc) | false | f
   WHILE {b = b} step PQ Pσ (while-loopSOS {σ = σ} refl c wc) | true | f = let Pσ'' = f (Pσ , <>) c
                                                                            in WHILE step PQ Pσ'' wc
-
-module Hoare2 where
-  -- Partial Execution Hoare Rules
-  -- no ⦃ ⦄ brackets because they're reserved :(
-  data P⟪_⟫_⟪_⟫ {l} : (State → Set l) → Com → (State → Set l) → Set (lsuc l) where
-    SKIP : ∀ {P} → P⟪ P ⟫ skip ⟪ P ⟫
-    ASSIGN : ∀ {P} {v : VName}{e : AExp} → P⟪ (λ σ → P (σ [ v ↦ e σ ])) ⟫ v := e ⟪ P ⟫
-    SEMI : ∀ {P Q R} {e : AExp} {c₁ c₂ : Com} →
-           P⟪ P ⟫ c₁ ⟪ Q ⟫ → P⟪ Q ⟫ c₂ ⟪ R ⟫ →
-           P⟪ P ⟫ c₁ >> c₂ ⟪ R ⟫
-    COND : ∀ {P Q} {b : BExp}{c₁ c₂ : Com} →
-           P⟪ P ∧ (λ σ → So (b σ)) ⟫ c₁ ⟪ Q ⟫ → P⟪ P ∧ (λ σ → So (not (b σ))) ⟫ c₂ ⟪ Q ⟫ →
-           P⟪ P ⟫ [IF b THEN c₁ ELSE c₂ FI] ⟪ Q ⟫
-    WHILE : {P Q : State → Set l} {b : BExp}{c : Com} →
-           P⟪ (λ σ → P σ × So (b σ)) ⟫ c ⟪ P ⟫ →
-           (INV : (σ : State) → So (not (b σ)) → P σ → Q σ) →
-           P⟪ P ⟫ [WHILE b DO c OD] ⟪ Q ⟫
-    WEAKEN : ∀ {P P' Q Q' : State → Set l} {e : AExp} {c : Com} →
-           (∀ σ → P σ → P' σ) →
-           P⟪ P' ⟫ c ⟪ Q' ⟫ →
-           (∀ σ → Q' σ → Q σ) →
-           P⟪ P ⟫ c ⟪ Q ⟫ 
-
-open Hoare2
-
--- Let's do a proof
-
-open import Agda.Builtin.Nat renaming (_+_ to _+N_; _-_ to _-N_;  _*_ to _*N_; _<_ to _<N_; _==_ to _==N_)
-
--- functionally defined factorial, and some laws
-
-fact : Nat → Nat
-fact zero = 1
-fact (suc n) = (suc n) *N fact n
-
-factorial-law : ∀ {n} → ¬ (0 ≡ n) → n *N (fact (n -N 1)) ≡ fact n
-factorial-law {zero} p with p refl
-factorial-law {zero} p | ()
-factorial-law {suc n} p = refl
-
-nat-<1-01 : ∀ {n} → (1 <N n) ≡ false → (n ≡ 0) + (n ≡ 1)
-nat-<1-01 {zero} refl = inl refl
-nat-<1-01 {suc zero} p = inr refl
-nat-<1-01 {suc (suc n)} ()
-
--- imperatively defined factorial
-
-fact-imp : Nat → Nat → Com
-fact-imp =
-    λ A B → (
-    B := (λ σ → 1) >>
-    [WHILE (λ σ → (1 <N (σ A))) DO
-      B := (λ σ → (σ B) *N (σ A)) >>
-      A := (λ σ → (σ A) -N 1)
-    OD])
-
--- Hoare proofs
-
-module _ (a b : VName) (abf : (Eq._==_ NatEq a b ≡ false)) where
-
-  fact-fact : (n : Nat) → P⟪ (λ σ → σ a ≡ n) ⟫ fact-imp a b ⟪ (λ σ → σ b ≡ fact n) ⟫
-  fact-fact n = WEAKEN
-                  weakP
-                  (SEMI
-                    {Q = (λ z → z b *N fact (z a) ≡ fact n)}
-                    ASSIGN
-                    (WHILE
-                      (WEAKEN
-                        weak-loopP
-                        (SEMI ASSIGN ASSIGN)
-                        λ σ → id)
-                      loop-inv))
-                  weakQ
-    where
-      weakP : {n : Nat} (σ : State) → σ a ≡ n → ((σ [ b ↦ 1 ]) b) *N fact ((σ [ b ↦ 1 ]) a) ≡ fact n
-      weakP σ p with Eq.law-refl NatEq {b}
-      weakP σ p | bb rewrite abf | bb | +N-runit {fact (σ a)} | p = refl
-      
-      weakQ : {n : Nat} (σ : State) → (So (not (1 <N σ a))) × (σ b *N fact (σ a) ≡ fact n) → σ b ≡ fact n
-      weakQ σ (p , q) with nat-<1-01 {σ a} (so-law-ff p)
-      weakQ σ (p , q) | inl x rewrite x | *N-runit {σ b} = q
-      weakQ σ (p , q) | inr x rewrite x | *N-runit {σ b} = q
-
-      weak-loopP : {n : Nat} (σ : State) →
-               (σ b *N fact (σ a) ≡ fact n) × So (1 <N σ a) →
-               ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b
-                 *N
-               fact (((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) a)
-               ≡ fact n
-      weak-loopP σ (p , q) rewrite Eq.law-refl NatEq {a}
-                                 | Eq.law-sym NatEq {b} {a}
-                                 | abf
-                                 | Eq.law-refl NatEq {b}
-                                 | sym (*N-assoc {σ b} {σ a} {fact (σ a -N 1)})
-                                 | factorial-law {σ a} (<N-neq-bound (<N-trans {0} {1} {σ a} <> q))
-                                 = p
-
-      loop-inv : {n : Nat} (σ : State) →
-             So (not (1 <N σ a)) →
-             σ b *N fact (σ a) ≡ fact (n) →
-             (So (not (1 <N σ a))) × (σ b *N fact (σ a) ≡ fact n)
-      loop-inv σ p q = p , q
