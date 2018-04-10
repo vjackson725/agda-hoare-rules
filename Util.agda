@@ -70,13 +70,21 @@ So : Bool → Set
 So false = Zero
 So true = One
 
-so-law-tt : ∀ {b} → (So b) → b ≡ true
-so-law-tt {false} ()
-so-law-tt {true} <> = refl
+so-law-tt-so : ∀ {b} → b ≡ true → So b
+so-law-tt-so {false} ()
+so-law-tt-so {true} refl = <>
 
-so-law-ff : ∀ {b} → (So (not b)) → b ≡ false
-so-law-ff {false} <> = refl
-so-law-ff {true} ()
+so-law-so-tt : ∀ {b} → So b → b ≡ true
+so-law-so-tt {false} ()
+so-law-so-tt {true} <> = refl
+
+so-law-ff-so-n : ∀ {b} → b ≡ false → So (not b)
+so-law-ff-so-n {false} refl = <>
+so-law-ff-so-n {true} ()
+
+so-law-so-n-ff : ∀ {b} → So (not b) → b ≡ false
+so-law-so-n-ff {false} <> = refl
+so-law-so-n-ff {true} ()
 
 so-not-neg-so : ∀ {b} → (So (not b)) → ¬ (So b)
 so-not-neg-so {false} <> = id
