@@ -10,6 +10,48 @@ open import Agda.Primitive
 open import Data
 open import Equality
 
+
+id : ∀ {a}{A : Set a} → A → A
+id x = x
+
+
+
+-- Type-level <-> Bool utilities
+
+not : Bool → Bool
+not false = true
+not true = false
+
+bool-lem : ∀ {b} → not (not b) ≡ b
+bool-lem {false} = refl
+bool-lem {true} = refl
+
+So : Bool → Set
+So false = Zero
+So true = One
+
+so-law-tt-so : ∀ {b} → b ≡ true → So b
+so-law-tt-so {false} ()
+so-law-tt-so {true} refl = <>
+
+so-law-so-tt : ∀ {b} → So b → b ≡ true
+so-law-so-tt {false} ()
+so-law-so-tt {true} <> = refl
+
+so-law-ff-so-n : ∀ {b} → b ≡ false → So (not b)
+so-law-ff-so-n {false} refl = <>
+so-law-ff-so-n {true} ()
+
+so-law-so-n-ff : ∀ {b} → So (not b) → b ≡ false
+so-law-so-n-ff {false} <> = refl
+so-law-so-n-ff {true} ()
+
+so-not-neg-so : ∀ {b} → (So (not b)) → ¬ (So b)
+so-not-neg-so {false} <> = id
+so-not-neg-so {true} ()
+
+-- Computational equality
+
 record Eq {l} (A : Set l) : Set l where
   infix 19 _==_
   field
@@ -44,52 +86,24 @@ instance
   law-sym {{BoolEq}} {true} {false} = refl
   law-sym {{BoolEq}} {true} {true} = refl
 
+-- Function update
+
 _[_↦_] : ∀ {a b} {A : Set a} {B : Set b} {{_ : Eq A}} → (A → B) → A → B → (A → B)
 (f [ x ↦ v ]) x' with x' == x
 (f [ x ↦ v ]) x' | false = f x'
 (f [ x ↦ v ]) x' | true = v
 
-id : ∀ {a}{A : Set a} → A → A
-id x = x
+fupdate-law-same-var : ∀ {a b} {A : Set a} {B : Set b} {x y : A} {v : B} {f : A → B} {{_ : Eq A}} → (x == y) ≡ true → (f [ y ↦ v ]) x ≡ v
+fupdate-law-same-var p rewrite p = refl
+
+fupdate-law-diff-var : ∀ {a b} {A : Set a} {B : Set b} {x y : A} {v : B} {f : A → B} {{_ : Eq A}} → (x == y) ≡ false → (f [ y ↦ v ]) x ≡ f x
+fupdate-law-diff-var p rewrite p = refl
+
+-- Nats
 
 natsToList : Nat → List Nat
 natsToList zero = []
 natsToList (suc m) = m ∷ natsToList m
-
-
-
-not : Bool → Bool
-not false = true
-not true = false
-
-bool-lem : ∀ {b} → not (not b) ≡ b
-bool-lem {false} = refl
-bool-lem {true} = refl
-
-So : Bool → Set
-So false = Zero
-So true = One
-
-so-law-tt-so : ∀ {b} → b ≡ true → So b
-so-law-tt-so {false} ()
-so-law-tt-so {true} refl = <>
-
-so-law-so-tt : ∀ {b} → So b → b ≡ true
-so-law-so-tt {false} ()
-so-law-so-tt {true} <> = refl
-
-so-law-ff-so-n : ∀ {b} → b ≡ false → So (not b)
-so-law-ff-so-n {false} refl = <>
-so-law-ff-so-n {true} ()
-
-so-law-so-n-ff : ∀ {b} → So (not b) → b ≡ false
-so-law-so-n-ff {false} <> = refl
-so-law-so-n-ff {true} ()
-
-so-not-neg-so : ∀ {b} → (So (not b)) → ¬ (So b)
-so-not-neg-so {false} <> = id
-so-not-neg-so {true} ()
-
 
 -- Nat laws
 

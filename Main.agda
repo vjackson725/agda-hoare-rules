@@ -56,7 +56,7 @@ nat-<1-01 {suc (suc n)} ()
 
 
 module _ (a b : VName) (abf : (Eq._==_ NatEq a b ≡ false)) where
-  open Hoare
+  open ≡-reasoning
 
   -- Proof that factorial (in IMP) implements factorial (in Agda) correctly
   fact-fact : (n : Nat) → ⟪ (λ σ → σ a ≡ n) ⟫ fact-imp a b ⟪ (λ σ → σ b ≡ fact n) ⟫
@@ -83,17 +83,52 @@ module _ (a b : VName) (abf : (Eq._==_ NatEq a b ≡ false)) where
 
       weak-loopP : (n : Nat) (σ : State) →
                (σ b *N fact (σ a) ≡ fact n) × So (1 <N σ a) →
-               ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b
-                 *N
-               fact (((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) a)
-               ≡ fact n
+                 ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b *N fact (((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) a)
+                 ≡
+                 fact n
+      weak-loopP n σ (P , Q) =
+               begin
+                 ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b *N fact (((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) a)
+               -- reduce on the right side of *N
+               ≡⟨ cong (λ x → (((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b) *N fact x) (
+                 begin
+                   ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) a
+                 ≡⟨ fupdate-law-same-var {x = a} {y = a} (Eq.law-refl NatEq {a}) ⟩
+                   (σ [ b ↦ σ b *N σ a ]) a -N 1
+                 ≡⟨ cong (_-N 1) (fupdate-law-diff-var {x = a} {y = b} abf) ⟩
+                   σ a -N 1
+                 ∎
+               )⟩
+                 ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b *N fact (σ a -N 1)
+               -- now reduced the left side of *N
+               ≡⟨ cong (_*N _) (begin
+                    ((σ [ b ↦ σ b *N σ a ]) [ a ↦ (σ [ b ↦ σ b *N σ a ]) a -N 1 ]) b
+                  ≡⟨ (fupdate-law-diff-var {x = b} {y = a} (trans (Eq.law-sym NatEq {b} {a}) abf)) ⟩
+                    (σ [ b ↦ σ b *N σ a ]) b
+                  ≡⟨ fupdate-law-same-var {x = b} {y = b} (Eq.law-refl NatEq {b}) ⟩
+                    σ b *N σ a
+                  ∎
+               )⟩
+                 σ b *N σ a *N fact (σ a -N 1)
+               ≡⟨ sym (*N-assoc {σ b} {σ a} {fact (σ a -N 1)}) ⟩
+                 σ b *N (σ a *N fact (σ a -N 1))
+               -- run factorial backwards, as 0 < σ a
+               ≡⟨ cong (σ b *N_) (factorial-law {σ a} (<N-neq-bound (<N-trans {0} {1} {σ a} <> Q))) ⟩
+                 σ b *N fact (σ a)
+               ≡⟨ P ⟩
+                 fact n
+               ∎
+{-}
+-- This can also be implemented with rewrite rules
       weak-loopP n σ (p , q) rewrite Eq.law-refl NatEq {a}
                                  | Eq.law-sym NatEq {b} {a}
                                  | abf
                                  | Eq.law-refl NatEq {b}
                                  | sym (*N-assoc {σ b} {σ a} {fact (σ a -N 1)})
                                  | factorial-law {σ a} (<N-neq-bound (<N-trans {0} {1} {σ a} <> q))
-                                 = p
+                                 | p
+                                 = refl
+}-}
 
       loop-inv : (n : Nat) (σ : State) →
              So (not (1 <N σ a)) →
